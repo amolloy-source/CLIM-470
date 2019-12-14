@@ -90,8 +90,8 @@ q(Nx,1:Ny) = 0.0 ! east boundary
 do ix = 1, Nx - 1
   do iy = 1, Ny - 1
     iv = ix + 1
-    h0(ix,iy) = hs(ix) !topography equals height of surface
-  end do 
+    h0(ix,iy,1) = hs(ix) !topography equals height of surface
+  end do
 end do
 !hu0
 hu0(1,:,1) = (h0(Nx-1,:,1)+h0(1,:,1))/2.0 !hu0 at the left boundary for all y
@@ -137,12 +137,13 @@ do ix=2, Nx-1
     z0(ix,iy,1)=(u(ix,iu-1)-u(ix,iu)+v(iv+1,iy)-v(iv,iy))/2
   end do
 end do
-!forcing coefficients alpha delta epsilon 
+!forcing coefficients alpha delta epsilon
 do ix = 1, Nx - 1
   do iy = 1, Ny - 1
     alp0(ix,iy,1) = (1/24)*(2*q0(ix+1,iy+1)+q0(ix,iy+1)+2*q0(ix,iy)+q0(ix+1,iy))
     dlt0(ix,iy,1) = (1/24)*(q0(ix+1,iy+1)+2*q0(ix,iy+1)+q0(ix,iy)+2*q0(ix+1,iy))
     eps0(ix,iy,1) = (1/24)*(q0(ix+1,iy+1)+q0(ix,iy+1)-q0(ix,iy)-q0(ix+1,iy))
+    zet0(ix,iy,1) = (1/24)*(-q0(ix+1,iy+1)+q0(ix,iy+1)+q0(ix,iy)-q0(ix+1,iy))
   end do
 end do
 !forcing coefficients beta and gamma
@@ -172,14 +173,16 @@ do ix = 1, Nx - 1
     ken0(:,:,1) = ((us0(ix,iu,1)+us0(ix+1,iu,1)/2)**2)+ &
 (((vs0(iv,iy+1,1)+vs0(iv,iy,1)/2)**2))/2
   end do
-end do 
+end do
 !--------------------Forward Euler Scheme for timesteps 2,3--------------------
 do n = 2,3
 
 do ix = 1, Nx-1
+  iu = ix + 1
   do iy = 1, Ny-1
-    h0(ix,iy,n) = h0(ix,iy,n)-delt*(us0(ix+1,iu,n-1)-us0(ix,iu,n-1)+&
-    vs0(iv,iy+1,n-1)-vs0(iv,iy,n-1))/d
+    iv = iy + 1
+    h0(ix,iy,n) = h0(ix,iy,n-1)-delt*(us0(iu,iy,n-1)-us0(iu-1,iy,n-1)+&
+    vs0(ix,iv,n-1)-vs0(ix,iv-1,n-1))/d
   end do
 end do
 !------------------------Differential Equations--------------------------------
@@ -203,13 +206,20 @@ us0(:,:,n)= hu0(:,:,n)*u(:,;)
 vs0(:,:,n)= hv0(:,:,n)*v(:,:)
 end do
 
-!h0
-do ix = 1, Nx - 1
-  do iy = 1, Ny - 1
+!coefficient forced forward scheme v0
+do iy = 1, Ny
+  iu = iy + 1
+  do ix = 1, Nx - 1
     iv = ix + 1
-    h0(ix,iy) = hs(ix) !topography equals height of surface
-  end do 
+    v0(ix,iy,n) = v0(ix,iy,n-1) - gam0(iv,iu+1,n-1)*us0(iv,iu+1,n-1) &
+    - dlt0(iv-1,iu,n-1)*us0(iv-1,iu,n-1) - alp0(iv-1,iu-1,n-1)*us0(iv-1,iu-1,n-1) &
+    - bet0(iv,iu-1,n-1)*us0(iv,iu-1,n-1) - zet0(ix,iu,n-1)*vs0(ix,iy+1,n-1) &
+    + zet0(ix,iu-1,n-1)*vs0(ix,iu-1,n-1) - ((ken0(ix,iu,n-1)+phi0(ix,iu,n-1)) &
+    - ken0(ix,iu-1,n-1)+phi0(ix,iu-1,n-1))/d
+  end do
 end do
+!coefficient forced forward scheme u0
+!enter code from Sean
 !hu0
 hu0(1,:,n) = (h0(Nx-1,:,n)+h0(1,:,n))/2.0 !hu0 at the left boundary for all y
 hu0(Nx,:,n) = (h0(Nx-1,:,n)+h0(1,:,n))/2.0 !hu0 at the right boundary for all y
@@ -247,19 +257,20 @@ do ix = 2, Nx - 1
   z0(ix,Ny,n)=(u(ix,Ny-1)+v(ix,Ny)-v(ix-1,Ny))/d !for all ix until Nx - 1
 end do
 !interior of domain relative vorticity
-do ix=2, Nx-1
-  iv= ix + 1
+do ix = 2, Nx-1
+  iv = ix + 1
   do iy = 2, Ny-1
     iu = iy + 1
     z0(ix,iy,n)=(u(ix,iu-1)-u(ix,iu)+v(iv+1,iy)-v(iv,iy))/2
   end do
 end do
-!forcing coefficients alpha delta epsilon 
+!forcing coefficients alpha delta epsilon zeta
 do ix = 1, Nx - 1
   do iy = 1, Ny - 1
     alp0(ix,iy,n) = (1/24)*(2*q0(ix+1,iy+1)+q0(ix,iy+1)+2*q0(ix,iy)+q0(ix+1,iy))
     dlt0(ix,iy,n) = (1/24)*(q0(ix+1,iy+1)+2*q0(ix,iy+1)+q0(ix,iy)+2*q0(ix+1,iy))
     eps0(ix,iy,n) = (1/24)*(q0(ix+1,iy+1)+q0(ix,iy+1)-q0(ix,iy)-q0(ix+1,iy))
+    zet0(ix,iy,n) = (1/24)*(-q0(ix+1,iy+1)+q0(ix,iy+1)+q0(ix,iy)-q0(ix+1,iy))
   end do
 end do
 !forcing coefficients beta and gamma
@@ -291,15 +302,32 @@ ken0(:,:,n) = ((us0(ix,iu,n)+us0(ix+1,iu,n)/2)**2)+(((vs0(iv,iy+1,n)+vs0(iv,iy,n
 end do
 
 
-!Adams Bashforth scheme given forward scheme timesteps
+!------------Adams Bashforth scheme given forward scheme timesteps-------------
+ ! initial conditions of experiment
+h(:,:) = h0(:,:,3)
+
 nstep = 4
 do n = 4, ntime
   nstep = nstep + 1
-  do i = 2, Nx-1
-    do j = 2, Ny-1
-      h(i,j)-f1*(us1(i+1,j+1)-us1(i,j+1)+vs1(i+1,j+1)-vs1(i+1,j))+ &
-      f2*(us2(i+1,j+1)-us2(i,j+1)+vs2(i+1,j+1)-vs2(i+1,j))+ &
-      -f3*(us3(i+1,j+1)-us3(i,j+1)+vs3(i+1,j+1)-vs3(i+1,j))
+  do ix = 1, Nx-1
+    iu = ix + 1
+    do iy = 1, Ny-1
+      iv = iy + 1
+      h(ix,iy) = h(ix,iy)-f1*(us1(iu,iy)-us1(iu-1,iy)+vs1(ix,iv)-vs1(ix,iv-1))+ &
+      f2*(us2(iu,iy)-us2(iu-1,iy)+vs2(ix,iv)-vs2(ix,iv-1))+ &
+      -f3*(us3(iu,iy)-us3(iu-1,iy)+vs3(ix,iv)-vs3(ix,iv-1))
+    end do
+  end do
+!coefficient forced v
+  do iy = 1, Ny
+    iu = iy + 1
+    do ix = 1, Nx - 1
+      iv = ix + 1
+      v0(ix,iy,n) = v0(ix,iy,n-1) - gam0(iv,iu+1,n-1)*us0(iv,iu+1,n-1) &
+      - dlt0(iv-1,iu,n-1)*us0(iv-1,iu,n-1) - alp0(iv-1,iu-1,n-1)*us0(iv-1,iu-1,n-1) &
+      - bet0(iv,iu-1,n-1)*us0(iv,iu-1,n-1) - zet0(ix,iu,n-1)*vs0(ix,iy+1,n-1) &
+      + zet0(ix,iu-1,n-1)*vs0(ix,iu-1,n-1) - ((ken0(ix,iu,n-1)+phi0(ix,iu,n-1)) &
+      - ken0(ix,iu-1,n-1)+phi0(ix,iu-1,n-1))/d
     end do
   end do
 
@@ -333,3 +361,5 @@ if (nstep == 1440) then
   write(10,*)h,u,v
   nstep = 0
 end do
+
+end Program Shallow
