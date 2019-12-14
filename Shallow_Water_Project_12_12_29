@@ -323,11 +323,7 @@ do n = 4, ntime
     iu = iy + 1
     do ix = 1, Nx - 1
       iv = ix + 1
-      v0(ix,iy,n) = v0(ix,iy,n-1) - gam0(iv,iu+1,n-1)*us0(iv,iu+1,n-1) &
-      - dlt0(iv-1,iu,n-1)*us0(iv-1,iu,n-1) - alp0(iv-1,iu-1,n-1)*us0(iv-1,iu-1,n-1) &
-      - bet0(iv,iu-1,n-1)*us0(iv,iu-1,n-1) - zet0(ix,iu,n-1)*vs0(ix,iy+1,n-1) &
-      + zet0(ix,iu-1,n-1)*vs0(ix,iu-1,n-1) - ((ken0(ix,iu,n-1)+phi0(ix,iu,n-1)) &
-      - ken0(ix,iu-1,n-1)+phi0(ix,iu-1,n-1))/d
+      v0(ix,iy,n) = v0(ix,iy,n) + f1*v0(ix,iy,n-1) - f2*v0(ix,iy,n-2) + f3*v0(ix,iy,n-3)
     end do
   end do
 
@@ -361,5 +357,3 @@ if (nstep == 1440) then
   write(10,*)h,u,v
   nstep = 0
 end do
-
-end Program Shallow
