@@ -303,8 +303,51 @@ end do
 
 
 !------------Adams Bashforth scheme given forward scheme timesteps-------------
- ! initial conditions of experiment
+!initial conditions of experiment given by final values of Forward Euler Shceme
 h(:,:) = h0(:,:,3)
+u(:,:) = u0(:,:,3)
+v(:,:) = v0(:,:,3)
+q(:,:) = q0(:,:,3)
+z(:,:) = z0(:,:,3)
+
+us(:,:)=hu(:,:)*u(:,:)
+vs(:,:)=hv(:,:)*v(:,:)
+
+us1(:,:)=us0(:,:,3)
+us2(:,:)=us0(:,:,2)
+us3(:,:)=us0(:,:,1)
+hu1(:,:)=hu2(:,:,3)
+hu2(:,:)=hu3(:,:,2)
+hu3(:,:)=hu(:,:,1)
+hv1(:,:)=hv2(:,:,3)
+hv2(:,:)=hv3(:,:,2)
+hv3(:,:)=hv(:,:,1)
+
+alp1(:,:)=alp0(:,:,1)
+alp2(:,:)=alp0(:,:,2)
+alp3(:,:)=alp0(:,:,3)
+bet1(:,:)=bet0(:,:,1)
+bet2(:,:)=bet0(:,:,2)
+bet3(:,:)=bet0(:,:,3)
+gam1(:,:)=gam0(:,:,1)
+gam2(:,:)=gam0(:,:,2)
+gam3(:,:)=gam0(:,:,3)
+dlt1(:,:)=dlt0(:,:,1)
+dlt2(:,:)=dlt0(:,:,2)
+dlt3(:,:)=dlt0(:,:,3)
+eps1(:,:)=eps(:,:,1)
+eps2(:,:)=eps(:,:,2)
+eps3(:,:)=eps(:,:,3)
+zet1(:,:)=zet0(:,:,1)
+zet2(:,:)=zet0(:,:,2)
+zet3(:,:)=zet0(:,:,3)
+ken1(:,:)=ken0(:,:,1)
+ken2(:,:)=ken0(:,:,2)
+ken3(:,:)=ken0(:,:,3)
+phi1(:,:)=phi0(:,:,1)
+phi2(:,:)=phi0(:,:,2)
+phi3(:,:)=phi0(:,:,3)
+
 
 nstep = 4
 do n = 4, ntime
@@ -323,7 +366,25 @@ do n = 4, ntime
     iu = iy + 1
     do ix = 1, Nx - 1
       iv = ix + 1
-      v0(ix,iy,n) = v0(ix,iy,n) + f1*v0(ix,iy,n-1) - f2*v0(ix,iy,n-2) + f3*v0(ix,iy,n-3)
+      v0(ix,iy,n) = v0(ix,iy) &
+
+      +f1*(-gam1(iv,iu+1,n-1)*us1(iv,iu+1,n-1) &
+      - dlt1(iv-1,iu,n-1)*us1(iv-1,iu,n-1) - alp1(iv-1,iu-1,n-1)*us1(iv-1,iu-1,n-1) &
+      - bet1(iv,iu-1,n-1)*us1(iv,iu-1,n-1) - zet1(ix,iu,n-1)*vs1(ix,iy+1,n-1) &
+      + zet1(ix,iu-1,n-1)*vs1(ix,iu-1,n-1) - ((ken1(ix,iu,n-1)+phi1(ix,iu,n-1)) &
+      - ken1(ix,iu-1,n-1)+phi1(ix,iu-1,n-1))/d) &
+
+      -f2*(-gam2(iv,iu+1,n-2)*us2(iv,iu+1,n-2) &
+      - dlt2(iv-1,iu,n-2)*us2(iv-1,iu,n-2) - alp2(iv-1,iu-1,n-2)*us2(iv-1,iu-1,n-2) &
+      - bet2(iv,iu-1,n-2)*us2(iv,iu-1,n-2) - zet2(ix,iu,n-2)*vs2(ix,iy+1,n-2) &
+      + zet2(ix,iu-1,n-2)*vs2(ix,iu-1,n-2) - ((ken2(ix,iu,n-2)+phi2(ix,iu,n-2)) &
+      - ken2(ix,iu-1,n-2)+phi2(ix,iu-1,n-2))/d) &
+
+      + f3*(-gam3(iv,iu+1,n-3)*us3(iv,iu+1,n-3) &
+      - dlt3(iv-1,iu,n-3)*us3(iv-1,iu,n-3) - alp3(iv-1,iu-1,n-3)*us3(iv-1,iu-1,n-3) &
+      - bet3(iv,iu-1,n-3)*us3(iv,iu-1,n-3) - zet3(ix,iu,n-1)*vs3(ix,iy+1,n-3) &
+      + zet3(ix,iu-1,n-3)*vs3(ix,iu-1,n-3) - ((ken3(ix,iu,n-1)+phi3(ix,iu,n-3)) &
+      - ken3(ix,iu-1,n-3)+phi3(ix,iu-1,n-3))/d)
     end do
   end do
 
@@ -339,18 +400,6 @@ do iy = 2, Ny-1
   hu(:,iy) = (h(:,iu-1) + h(:,iu))/2.0
 end do
 
-us(:,:)=hu(:,:)*u(:,:)
-vs(:,:)=hv(:,:)*v(:,:)
-
-us1=us2
-us2=us3
-us3=us
-hu1=hu2
-hu2=hu3
-hu3=hu
-hv1=hv2
-hv2=hv3
-hv3=hv
 
 !time loop
 if (nstep == 1440) then
