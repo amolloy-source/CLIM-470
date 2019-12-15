@@ -1,0 +1,586 @@
+program ShallowWaterModel
+ !Sean Jones and Aaron Molloy
+ !CLIM 470
+ !Class Final Project
+
+IMPLICIT NONE
+
+!Declaring variables
+integer :: Nx,Ny,ix,iy,iu,iv,n,nstep
+real :: f1,f2,f3,g,f,Lx,Ly,d,hs_t,delt
+real, allocatable :: hs(:),h(:,:),u(:,:),v(:,:),z(:,:),q(:,:),&
+        us(:,:),us1(:,:),us2(:,:),us3(:,:),vs(:,:),vs1(:,:),vs2(:,:),&
+		vs3(:,:),hu(:,:),hv(:,:),h0(:,:,:),hu0(:,:,:),hv0(:,:,:),&
+        hq0(:,:,:),us0(:,:,:),vs0(:,:,:),alp0(:,:,:),bet0(:,:,:),&
+        gam0(:,:,:),dlt0(:,:,:),eps0(:,:,:),zet0(:,:,:),ken0(:,:,:),&
+        phi0(:,:,:),q0(:,:,:),z0(:,:,:),alp(:,:),bet(:,:),gam(:,:),&
+		dlt(:,:),eps(:,:),zet(:,:),ken(:,:),phi(:,:),alp1(:,:),&
+		bet1(:,:),gam1(:,:),dlt1(:,:),eps1(:,:),zet1(:,:),ken1(:,:)&
+		,phi1(:,:),alp2(:,:),bet2(:,:),gam2(:,:),dlt2(:,:),eps2(:,:)&
+		,zet2(:,:),ken2(:,:),phi2(:,:),alp3(:,:),bet3(:,:),gam3(:,:)&
+		,dlt3(:,:),eps3(:,:),zet3(:,:),ken3(:,:),phi3(:,:),u0(:,:,:)&
+		,v0(:,:,:),hq(:,:)
+
+Lx= 6e+06     !domain size in x direction
+Ly= 2e+06     !domain size in y direction
+
+d= 5e+05      !Resolution
+!d= 2.5e+05
+!d= 1.25e+05
+
+delt= 10*60   !Time steps
+!delt= 5*60
+!delt= 2.5*60
+
+f1= 23*delt/12.0   !Weight given to each iteration
+f2= 4*delt/3.0
+f3= 5*delt/12.0
+
+Nx= Lx/d +1.0   !number of grid points in the x direction(13,25,49)
+Ny= Ly/d +1.0   !number of grid points in the y direction(5,9,17)
+
+allocate(hs(Nx))       !surface height
+hs_t= 2e+3   !Height of topography
+
+if(d==5.e+05)then     !Checking resolution and inserting mountain, 500 km
+  hs(Nx/2)= hs_t
+endif
+
+if(d==2.5e+05)then    !Resolution of 250km
+ hs(Nx/2 -1)=1e+03
+ hs(Nx/2)=hs_t
+ hs(Nx/2 +1)=1e+03
+endif
+
+if(d==1.25e+05)then    !Resolution of 125km
+ hs(Nx/2 -2)= 0.5e+03
+ hs(Nx/2 -1)= 0.5e+03
+ hs(Nx/2)= hs_t
+ hs(Nx/2 +1)= 0.5e+03
+ hs(Nx/2 +2)= 0.5e+03
+endif
+
+!Initializing arrays
+allocate(hu0(Nx,Ny-1,3),hv0(Nx-1,Ny,3),hq0(Nx,Ny,3),h0(Nx-1,Ny-1,3),&
+         us0(Nx,Ny-1,3),vs0(Nx-1,Ny,3))
+
+allocate(h(Nx-1,Ny-1),u(Nx,Ny-1),v(Nx-1,Ny),z(Nx,Ny),q(Nx,Ny)&
+         ,hq(Nx,Ny))
+
+allocate(alp0(Nx,Ny-1,3),bet0(Nx,Ny-1,3),gam0(Nx,Ny-1,3),&
+        dlt0(Nx,Ny-1,3),eps0(Nx-1,Ny-1,3),zet0(Nx-1,Ny-1,3),&
+        ken0(Nx-1,Ny-1,3),phi0(Nx,Ny,3),q0(Nx,Ny,3),z0(Nx,Ny,3))
+!-----------------------------------------
+!Initial Conditions
+u0(:,:,1)=0.5
+v0(1:Nx,2:Ny-1,1)=0.1
+v0(1:Nx,1,1)=0.0       !Lower Boundary
+v0(1:Nx,Ny,1)=0.0      !Upper Boundary
+q(1:Nx,1)=0.0
+q(1:Nx,Ny)=0.0
+q(1,1:Ny)=0.0
+q(Nx,1:Ny)=0.0
+
+!Establishing height field
+do ix=1,Nx-1
+  iv = ix + 1
+  do iy = 1,Ny-1
+    h0(ix,iy,1)=hs(iv)
+  enddo
+enddo
+
+hu0(1,:,1)=(h0(Nx-1,:,1)+h0(1,:,1))/2.0     !Left Boundary
+hu0(Nx,:,1)=(h0(Nx-1,:,1)+h0(1,:,1))/2.0    !Right Boundary
+do ix=2,Nx-1
+  iv = ix + 1
+  hu0(ix,:,1)=(h0(iv,:,1)+h0(iv-1,:,1))/2.0
+enddo
+
+hv0(:,1,1)=(h0(:,Ny-1,1)+h0(:,1,1))/2.0     !Bottom Boundary
+hv0(:,Ny,1)=(h0(:,Ny-1,1)+h0(:,1,1))/2.0    !Top Boundary
+do iy=2,Ny-1
+  iu = iy + 1
+  hv0(:,iy,1)=(h0(:,iu,1)+h0(:,iu-1,1))/2.0
+enddo
+
+us0(:,:,1)=hu0(:,:,1)*u0(:,:,1)
+vs0(:,:,1)=hv0(:,:,1)*v0(:,:,1)
+
+!Relative vorticity at left and right boundary
+do iy=2, Ny-1
+  iu = iy + 1
+  z0(1,iy,1)=(u0(1,iu-1,1)-u0(1,iu,1)+(v0(1,iy,1)-v0(Nx,iy,1)))/d
+  z0(Nx,iy,1)=(u0(Nx,iu-1,1)-u0(1,iu,1)+(v0(1,iy,1)-v0(Nx-1,iy,1)))/d
+enddo
+
+do ix=2,Nx-1
+  iv = ix + 1
+  z0(ix,1,1)=(-u0(ix,1,1)+v0(iv,1,1)-v0(iv-1,1,1))/d
+  z0(ix,Ny,1)=(u0(ix,Ny-1,1)+v0(ix,Ny,1)-v0(ix-1,Ny,1))/d
+enddo
+
+do ix=2,Nx-1
+  iv = ix + 1
+  do iy=2,Ny-1
+    iu = iy + 1
+    z0(ix,iy,1)=(u0(ix,iu-1,1)-u0(ix,iu,1)+v0(iv+1,iy,1)-v0(iv,iy,1))/d
+  enddo
+enddo
+
+hq0(1,:,1) = (hv0(1,:,1) + hv0(Nx-1,:,1))/2.0  !hq0 at left boundary
+hq0(Nx,:,1) = (hv0(1,:,1) + hv0(Nx-1,:,1))/2.0 !hq0 at right boundary
+do ix = 2, Nx-1
+  do iy = 1, Ny
+  hq0(ix,iy,1) = (hv0(ix,iy,1) + hv0(ix-1,iy,1))/2.0 !hq0 at all other points
+  enddo
+enddo
+
+!Setting Coriolis parameter
+f = 1.0e-04
+
+!Establish initial potential vorticity
+q0(:,:,1) = (f + z0(:,:,1))/(hq0(:,:,1))
+
+!Potential energy
+do ix = 1, Nx
+  phi0(ix,:,1) = g*hs(ix)
+enddo
+
+!Kinetic energy
+do ix = 1, Nx-1
+  iv = ix + 1
+  do iy = 1, Ny-1
+    iu = iy + 1
+    ken0(ix,iy,1)=((us0(ix,iu,1)*us0(ix+1,iu,1)/2.0)+(vs0(iv,iy,1)&
+	              *vs0(iv,iy+1,1)/2.0))/2.0
+  enddo
+enddo
+
+!Coefficients for Adams-Bashforth time step
+do ix = 1, Nx-1
+  do iy = 1,Ny-1
+    alp0(ix,iy,1)= 1/24*(2*q0(ix+1,iy+1,1)+q0(ix,iy+1,1)+2*q0(ix,iy,1)&
+	               +q0(ix+1,iy,1))
+    dlt0(ix,iy,1)= 1/24*(q0(ix+1,iy+1,1)+2*q0(ix,iy+1,1)+q0(ix,iy,1)&
+	               +2*q0(ix+1,iy,1))
+    eps0(ix,iy,1)= 1/24*(q0(ix+1,iy+1,1)+q0(ix,iy+1,1)-q0(ix,iy,1)&
+                   -q0(ix+1,iy,1))
+	zet0(ix,iy,1)= 1/24*(-q0(ix+1,iy+1,1)+q0(ix,iy+1,1)+q0(ix,iy,1)&
+	               -q0(ix+1,iy,1))
+  enddo
+enddo
+
+do iy = 1,Ny-1
+  bet0(1,iy,1)= (1/24)*(q0(ix,iy+1,1)+2*q0(Nx,iy+1,1)+q0(Nx,iy,1)&
+                  +2*q0(ix,iy,1))
+  gam0(1,iy,1)= (1/24)*(2*q0(ix,iy+1,1)+q0(Nx,iy+1,1)+2*q0(Nx,iy,1)&
+                  +q0(ix,iy,1))
+enddo
+
+do ix = 2, Nx-1
+  do iy = 1, Ny-1
+    bet0(ix,iy,1)= (1/24)*(q0(ix,iy+1,1)+2*q0(ix-1,iy+1,1)+q0(ix-1,iy,1)&
+                  +2*q0(ix,iy,1))
+    gam0(ix,iy,1)= (1/24)*(2*q0(ix,iy+1,1)+q0(ix-1,iy+1,1)+2*q0(ix-1,iy,1)&
+                  +q0(ix,iy,1))
+  enddo
+enddo
+
+print*,"Done with initial conditions"
+
+!------------------------------------------------------------------------
+!------------------------------------------------------------------------
+do n= 2,3       !For time steps 2 and 3 ,which are n-1 and n respectively
+
+  do ix= 1, Nx-1
+    iu = ix+1
+    do iy= 1, Ny-1
+      iv = iy+1
+      h0(ix,iy,n)=h0(ix,iy,n-1)-delt*(us0(iu,iy,n-1)-us0(iu-1,iy,n-1)&
+                  +vs0(ix,iv,n-1)-vs0(ix,iv-1,n-1))/d
+    enddo
+  enddo
+
+  do iy = 1, Ny-1       !u wind at left and right boundary
+    iv = iy + 1
+	u0(1,iy,n)=u0(1,iy,n-1)+delt*(alp0(1,iy,n-1)*vs0(1,iv,n-1)&
+	            +bet0(1,iy,n-1)*vs0(Nx-1,iv,n-1)+gam0(Nx,iy,n-1)&
+				*vs0(Nx-1,iv-1,n-1)+dlt0(1,iy,n-1)*vs0(1,iv-1,n-1)&
+				-eps0(1,iy,n-1)*us0(1,iy,n-1)+eps0(Nx-1,iy,n-1)&
+				*us0(Nx,iy,n-1)-((ken0(1,iy,n-1)+phi0(1,iy,n-1))&
+				-(ken0(Nx-1,iy,n-1)+phi0(Nx-1,iy,n-1)))/d)
+    u0(Nx,iy,n)=u0(Nx,iy,n-1)+delt*(alp0(Nx,iy,n-1)*vs0(1,iv,n-1)&
+	            +bet0(Nx,iy,n-1)*vs0(Nx-1,iv,n-1)+gam0(Nx,iy,n-1)&
+				*vs0(Nx-1,iv-1,n-1)+dlt0(Nx,iy,n-1)*vs0(1,iv-1,n-1)&
+				-eps0(1,iy,n-1)*us0(1,iy,n-1)+eps0(Nx-1,iy,n-1)&
+				*us0(Nx-1,iy,n-1)-((ken0(1,iy,n-1)+phi0(1,iy,n-1))&
+				-(ken0(Nx-1,iy,n-1)+phi0(Nx-1,iy,n-1)))/d)
+  enddo
+  do ix = 2, Nx-1       !u wind at all other points
+    do iy = 1, Ny-1
+	  iv = iy + 1
+      u0(ix,iy,n)=u0(ix,iy,n-1)+delt*(alp0(ix,iy,n-1)*vs0(ix,iv,n-1)&
+                  +bet0(ix,iy,n-1)*vs0(ix,iv,n-1)+gam0(ix,iy,n-1)&
+		  		  *vs0(ix-1,iv-1,n-1)+dlt0(ix,iy,n-1)*vs0(ix,iv-1,n-1)&
+				  -eps0(ix,iy,n-1)*us0(ix+1,iy,n-1)+eps0(ix-1,iy,n-1)&
+				  *us0(ix-1,iy,n-1)-((ken0(ix,iy,n-1)+phi0(ix,iy,n-1))&
+				  -(ken0(ix-1,iy,n-1)+phi0(ix-1,iy,n-1)))/d)
+    enddo
+  enddo
+
+  do ix = 1, Nx-1
+    iu= iy + 1
+	do iy = 2,Ny-1
+	  iv = ix + 1
+      v0(ix,iy,n)=v0(ix,iy,n-1)+delt*(-gam0(iv,iy,n-1)*us0(iv,iu+1,n-1)&
+	              -dlt0(iv-1,iu,n-1)*us0(iv-1,iu,n-1)-alp0(iv-1,iu-1,n-1)&
+				  *us0(iv-1,iu-1,n-1)-bet0(iv,iu-1,n-1)*us0(iv,iu-1,n-1)&
+				  -zet0(ix,iu-1,n-1)*vs0(ix,iy-1,n-1)+zet0(ix,iy-1,n-1)&
+				  -((ken0(ix,iu,n-1)+phi0(ix,iu,n-1))-(ken0(ix,iu-1,n-1)&
+				  +phi0(ix,iu-1,n-1)))/d)
+	 enddo
+  enddo
+
+  hu0(1,:,n)=(h0(Nx,:,n)+h0(1,:,n))/2.0
+  hu0(Nx,:,n)=(h0(Nx-1,:,n)+h0(1,:,n))/2.0
+
+  do ix=2,Nx-1
+    iv = ix + 1
+    hu0(ix,:,n)=(h0(iv,:,n) + h0(ix-1,:,n))/2.0
+  enddo
+
+  hv0(:,1,n)=(h0(:,Ny,n)+h0(:,1,n))/2.0
+  hv0(:,Ny,n)=(h0(:,Ny-1,n)+h0(:,1,n))/2.0
+
+  do iy=2, Ny-1
+    iu = iy + 1
+    hv0(:,iy,n)=(h0(:,iu-1,n)+h0(:,iu,n))/2.0
+  enddo
+
+  us0(:,:,n)=hu0(:,:,n)*u0(:,:,n)
+  vs0(:,:,n)=hv0(:,:,n)*v0(:,:,n)
+
+  hq0(1,:,n) = (hv0(1,:,n) + hv0(Nx-1,:,n))/2.0  !hq0 at left boundary
+  hq0(Nx,:,n) = (hv0(1,:,n) + hv0(Nx-1,:,n))/2.0 !hq0 at right boundary
+  do ix = 2, Nx-1                                !hq0 at all other points
+    do iy = 1, Ny
+    hq0(ix,iy,n) = (hv0(ix,iy,n) + hv0(ix-1,iy,n))/2.0
+    enddo
+  enddo
+
+  !Relative vorticity
+  do iy=2, Ny-1
+    iu = iy + 1
+    z0(1,iy,n)=(u0(1,iu-1,n)-u0(1,iu,n)+v0(1,iy,n)-v0(Nx,iy,n))/d
+    z0(Nx,iy,n)=(u0(Nx,iu-1,n)-u0(1,iu,n)+v0(1,iy,n)-v0(Nx-1,iy,n))/d
+  enddo
+
+  do ix=2,Nx-1
+    iv = ix + 1
+    z0(ix,1,n)=(-u0(ix,1,n)+v0(iv,1,n)-v0(iv-1,1,n))/d
+    z0(ix,Ny,n)=(u0(ix,Ny-1,n)+v0(ix,Ny,n)-v0(ix-1,Ny,n))/d
+  enddo
+
+  do ix=2,Nx-1
+    iv = ix + 1
+    do iy=2,Ny-1
+      iu = iy + 1
+      z0(ix,iy,n)=(u0(ix,iu-1,n)-u0(ix,iu,n)+v0(iv+1,iy,n)-v0(iv,iy,n))&
+	              /d
+    enddo
+  enddo
+
+  q0(:,:,n) = (f + z0(:,:,n))/hq0(:,:,n)
+
+  do ix = 1, Nx-1
+    do iy = 1,Ny-1
+      alp0(ix,iy,n)= 1/24*(2*q0(ix+1,iy+1,n)+q0(ix,iy+1,n)+2*q0(ix,iy,n)&
+	                 +q0(ix+1,iy,n))
+      dlt0(ix,iy,n)= 1/24*(q0(ix+1,iy+1,n)+2*q0(ix,iy+1,n)+q0(ix,iy,n)&
+	                 +2*q0(ix+1,iy,n))
+      eps0(ix,iy,n)= (1/24)*(q0(ix+1,iy+1,n)+q0(ix,iy+1,n)-q0(ix,iy,n)&
+                     -q0(ix+1,iy,n))
+	  zet0(ix,iy,n)= 1/24*(-q0(ix+1,iy+1,n)+q0(ix,iy+1,n)+q0(ix,iy,n)&
+	                -q0(ix+1,iy,n))
+    enddo
+  enddo
+
+  do iy = 1,Ny-1
+    bet0(1,iy,n)= (1/24)*(q0(ix,iy+1,n)+2*q0(Nx,iy+1,n)+q0(Nx,iy,n)&
+                  +2*q0(ix,iy,n))
+    gam0(1,iy,n)= (1/24)*(2*q0(ix,iy+1,n)+q0(Nx,iy+1,n)+2*q0(Nx,iy,n)&
+                  +q0(ix,iy,n))
+  enddo
+
+  do ix = 2, Nx-1
+    do iy = 1, Ny-1
+      bet0(ix,iy,n)= (1/24)*(q0(ix,iy+1,n)+2*q0(ix-1,iy+1,n)+q0(ix-1,iy,n)&
+                     +2*q0(ix,iy,n))
+      gam0(ix,iy,n)= (1/24)*(2*q0(ix,iy+1,n)+q0(ix-1,iy+1,n)+2*q0(ix-1,iy,n)&
+                     +q0(ix,iy,n))
+    enddo
+  enddo
+
+  do ix = 1, Nx
+    phi0(ix,:,n) = g*hq0(ix,:,n)
+  enddo
+
+  !Kinetic energy
+  do ix = 1, Nx-1
+    iv = ix + 1
+    do iy = 1, Ny-1
+      iu = iy + 1
+      ken0(ix,iy,n)=((u0(ix,iu,n)+u0(ix+1,iu,n)/2.0)**2+(v0(iv,iy,n)&
+	                +v0(iv,iy+1,n)/2.0)**2)/2.0
+    enddo
+  enddo
+enddo
+
+!Assigning initial values for Adams-Bashforth time differencing
+us1(:,:)= us0(:,:,3)
+us2(:,:)= us0(:,:,2)
+us3(:,:)= us0(:,:,1)
+vs1(:,:)= vs0(:,:,3)
+vs2(:,:)= vs0(:,:,2)
+vs3(:,:)= vs0(:,:,1)
+alp1(:,:)=alp0(:,:,3)
+alp2(:,:)=alp0(:,:,2)
+alp3(:,:)=alp0(:,:,1)
+bet1(:,:)=bet0(:,:,3)
+bet2(:,:)=bet0(:,:,2)
+bet3(:,:)=bet0(:,:,1)
+gam1(:,:)=gam0(:,:,3)
+gam2(:,:)=gam0(:,:,2)
+gam3(:,:)=gam0(:,:,1)
+dlt1(:,:)=dlt0(:,:,3)
+dlt2(:,:)=dlt0(:,:,2)
+dlt3(:,:)=dlt0(:,:,1)
+eps1(:,:)=eps0(:,:,3)
+eps2(:,:)=eps0(:,:,2)
+eps3(:,:)=eps0(:,:,1)
+zet1(:,:)=zet0(:,:,3)
+zet2(:,:)=zet0(:,:,2)
+zet1(:,:)=zet0(:,:,1)
+ken1(:,:)=ken0(:,:,3)
+ken2(:,:)=ken0(:,:,2)
+ken3(:,:)=ken0(:,:,1)
+phi1(:,:)=phi0(:,:,3)
+phi2(:,:)=phi0(:,:,2)
+phi3(:,:)=phi0(:,:,1)
+h(:,:)= h0(:,:,3)
+u(:,:)= u0(:,:,3)
+v(:,:)= v0(:,:,3)
+q(:,:)= q0(:,:,3)
+z(:,:)= z0(:,:,3)
+
+!Deallocating placeholder matrices for first three time steps
+deallocate(us0,vs0,alp0,bet0,gam0,dlt0,eps0,zet0,ken0,phi0,h0&
+           ,u0,v0,q0,z0,hu0,hv0,hq0)
+!- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+!- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+nstep= 4
+             !Utilizing Adams-Bashforth scheme going forward
+do n=4, 1441
+  nstep= nstep +1
+  do ix=1,Nx-1
+    iu = ix + 1
+    do iy=1,Ny-1
+	  iv = iy + 1
+      h(ix,iy)= h(ix,iy)-f1*(us1(iu,iy)-us1(iu-1,iy)+vs1(ix,iv)&
+	            -vs1(ix,iv-1))+f2*(us2(iu,iy)-us2(iu,iy)+vs2(ix,iv)&
+				-vs2(ix,iv-1))-f3*(us3(iu,iy)-us3(iu-1,iy)+vs3(ix,iv)&
+				-vs3(ix,iv-1))
+    enddo
+  enddo
+
+  do iy = 1, Ny-1       !u wind at left and right boundary
+    iv = iy + 1
+	u(1,iy)= u(1,iy)+f1*(alp1(1,iy)*vs1(1,iv)+bet1(1,iy)&
+	         *vs1(Nx-1,iv)+gam1(Nx,iy)*vs1(Nx-1,iv-1)&
+			 +dlt1(1,iy)*vs1(1,iv-1)-eps1(1,iy)*us1(2,iy)&
+			 +eps1(Nx-1,iy)*us1(Nx,iy)-((ken1(1,iy)+phi1(1,iy))&
+		     -(ken1(Nx-1,iy)+phi1(Nx-1,iy)))/d)-f2*(alp2(1,iy)&
+			 *vs2(1,iv)+bet2(1,iy)*vs2(Nx-1,iv)+gam2(Nx,iy)&
+			 *vs2(Nx-1,iv-1)+dlt2(1,iy)*vs2(1,iv-1)-eps2(1,iy)&
+			 *us2(2,iy)+eps2(Nx-1,iy)*us2(Nx,iy)-((ken2(1,iy)+phi2(1,iy))&
+		     -(ken2(Nx-1,iy)+phi2(Nx-1,iy)))/d)+f3*(alp3(1,iy)&
+			 *vs3(1,iv)+bet3(1,iy)*vs3(Nx-1,iv)+gam3(Nx,iy)&
+			 *vs3(Nx-1,iv-1)+dlt3(1,iy)*vs3(1,iv-1)-eps3(1,iy)&
+			 *us3(2,iy)+eps3(Nx-1,iy)*us3(Nx,iy)-((ken3(1,iy)&
+			 +phi3(1,iy))-(ken3(Nx-1,iy)+phi3(Nx-1,iy)))/d)
+    u(Nx,iy)= u(Nx,iy)+f1*(alp1(Nx,iy)*vs1(1,iv)+bet1(Nx,iy)&
+	          *vs1(Nx-1,iv)+gam1(Nx,iy)*vs1(Nx-1,iv-1)+dlt1(Nx,iy)&
+			  *vs1(1,iv-1)-eps1(1,iy)*us1(1,iy)+eps1(Nx-1,iy)&
+			  *us1(Nx-1,iy)-((ken1(1,iy)+phi1(1,iy))-(ken1(Nx-1,iy)&
+			  +phi1(Nx-1,iy)))/d)-f2*(alp2(Nx,iy)*vs2(1,iv)&
+			  +bet2(Nx,iy)*vs2(Nx-1,iv)+gam2(Nx,iy)*vs2(Nx-1,iv-1)&
+			  +dlt2(Nx,iy)*vs2(1,iv-1)-eps2(1,iy)*us2(1,iy)&
+			  +eps2(Nx-1,iy)*us2(Nx-1,iy)-((ken2(1,iy)+phi2(1,iy))&
+			  -(ken2(Nx-1,iy)+phi2(Nx-1,iy)))/d)+f3*(alp3(Nx,iy)&
+			  *vs3(1,iv)+bet3(Nx,iy)*vs3(Nx-1,iv)+gam3(Nx,iy)&
+			  *vs3(Nx-1,iv-1)+dlt3(Nx,iy)*vs3(1,iv-1)-eps3(1,iy)&
+			  *us3(1,iy)+eps3(Nx-1,iy)*us3(Nx-1,iy)-((ken3(1,iy)&
+			  +phi3(1,iy))-(ken3(Nx-1,iy)+phi3(Nx-1,iy)))/d)
+  enddo
+  do ix = 2, Nx-1      !u wind at all other points
+    do iy = 1, Ny-1
+	  iv = iy + 1
+      u(ix,iy)= u(ix,iy)+f1*(alp1(ix,iy)*vs1(ix,iv)&
+                +bet1(ix,iy)*vs1(ix,iv)+gam1(ix,iy)&
+			    *vs1(ix-1,iv-1)+dlt1(ix,iy)*vs1(ix,iv-1)&
+				-eps1(ix,iy)*us1(ix+1,iy)+eps1(ix-1,iy)&
+				*us1(ix-1,iy)-((ken1(ix,iy)+phi1(ix,iy))&
+				-(ken1(ix-1,iy)+phi1(ix-1,iy)))/d)-f2*(alp2(ix,iy)&
+				*vs2(ix,iv)+bet2(ix,iy)*vs2(ix,iv)+gam2(ix,iy)&
+			    *vs2(ix-1,iv-1)+dlt2(ix,iy)*vs2(ix,iv-1)&
+				-eps2(ix,iy)*us2(ix+1,iy)+eps2(ix-1,iy)&
+				*us2(ix-1,iy)-((ken2(ix,iy)+phi2(ix,iy))&
+				-(ken2(ix-1,iy)+phi2(ix-1,iy)))/d)+f3*(alp3(ix,iy)&
+				*vs3(ix,iv)+bet3(ix,iy)*vs3(ix,iv)+gam3(ix,iy)&
+			    *vs3(ix-1,iv-1)+dlt3(ix,iy)*vs3(ix,iv-1)-eps3(ix,iy)&
+				*us3(ix+1,iy)+eps3(ix-1,iy)*us3(ix-1,iy)&
+				-((ken3(ix,iy)+phi3(ix,iy))-(ken3(ix-1,iy)&
+				+phi3(ix-1,iy)))/d)
+    enddo
+  enddo
+
+  do ix = 1, Nx-1
+    iv= ix + 1
+	do iy = 2,Ny-1
+	  iu = iy + 1
+      v(ix,iy)= v(ix,iy)+f1*(-gam1(ix,iy)*us1(iv,iy)&
+	              -dlt1(iv-1,iu)*us1(iv-1,iu)-alp1(iv-1,iu-1)&
+				  *us1(iv-1,iu-1)-bet1(iv,iu-1)*us1(iv,iu-1)&
+				  -zet1(ix,iy)*vs1(ix,iu)+zet1(ix,iy)&
+				  *vs1(ix,iy-1)-((ken1(ix,iu)+phi1(ix,iu))&
+				  -(ken1(ix,iu-1)+phi1(ix,iu-1)))/d)-f2*&
+				  (-gam2(ix,iy)*us2(iv,iu+1)-dlt2(iv-1,iu)&
+				  *us2(iv-1,iu)-alp2(iv-1,iu-1)*us2(iv-1,iu-1)&
+				  -bet2(iv,iu-1)*us2(iv,iu-1)-zet2(ix,iy)&
+				  *vs2(ix,iy-1)+zet2(ix,iy)*vs2(ix,iy-1)&
+				  -((ken2(ix,iy)+phi2(ix,iy))-(ken2(ix,iy-1)&
+				  +phi2(ix,iy-1)))/d)+f3*(-gam3(ix,iy)&
+				  *us3(iv,iu+1)-dlt3(iv-1,iu)*us3(iv-1,iu)&
+				  -alp3(iv-1,iu-1)*us3(iv-1,iu-1)-bet3(iv,iu-1)&
+				  *us3(iv,iu-1)-zet3(ix,iy)*vs3(ix,iy-1)&
+				  +zet3(ix,iy)-((ken3(ix,iy)+phi3(ix,iy))&
+				  -(ken3(ix,iy-1)+phi3(ix,iy-1)))/d)
+	 enddo
+  enddo
+
+  hu(1,:)=(h(Nx,:)+h(1,:))/2.0
+  hu(Nx,:)=(h(Nx-1,:)+h(1,:))/2.0
+  do ix=2,Nx-1
+    iv = ix + 1
+    hu(ix,:)=(h(iv-1,:)+h(iv,:))/2.0
+  enddo
+
+  hv(:,1)=(h(:,Ny)+h(:,1))/2.0
+  hv(:,Ny)=(h(:,Ny-1)+h(:,1))/2.0
+  do iy=2,Ny-1
+    iu = iy + 1
+    hv(:,iy)=(h(:,iu-1)+h(:,iu))/2.0
+  enddo
+
+  hq(1,:) = (hv(1,:) + hv(Nx-1,:))/2.0  !hq at left boundary
+  hq(Nx,:) = (hv(1,:) + hv(Nx-1,:))/2.0 !hq at right boundary
+  do ix = 2, Nx-1                                !hq at all other points
+    do iy = 1, Ny
+    hq(ix,iy) = (hv(ix,iy) + hv(ix-1,iy))/2.0
+    enddo
+  enddo
+
+  do ix = 1, Nx-1
+    do iy = 1,Ny-1
+      alp(ix,iy)= 1/24*(2*q(ix+1,iy+1)+q(ix,iy+1)+2*q(ix,iy)&
+	                +q(ix+1,iy))
+      dlt(ix,iy)= 1/24*(q(ix+1,iy+1)+2*q(ix,iy+1)+q(ix,iy)&
+	                +2*q(ix+1,iy))
+      eps(ix,iy)= (1/24)*(q(ix+1,iy+1)+q(ix,iy+1)-q(ix,iy)&
+                    -q(ix+1,iy))
+	  zet(ix,iy)= 1/24*(-q(ix+1,iy+1)+q(ix,iy+1)+q(ix,iy)&
+	                -q(ix+1,iy))
+    enddo
+  enddo
+
+  do iy = 1,Ny-1
+    bet(1,iy)= (1/24)*(q(ix,iy+1)+2*q(Nx,iy+1)+q(Nx,iy)&
+                  +2*q(ix,iy))
+    gam(1,iy)= (1/24)*(2*q(ix,iy+1)+q(Nx,iy+1)+2*q(Nx,iy)&
+                  +q(ix,iy))
+  enddo
+
+  do ix = 2, Nx-1
+    do iy = 1, Ny-1
+      bet(ix,iy)= (1/24)*(q(ix,iy+1)+2*q(ix-1,iy+1)+q(ix-1,iy)&
+                     +2*q(ix,iy))
+      gam(ix,iy)= (1/24)*(2*q(ix,iy+1)+q(ix-1,iy+1)+2*q(ix-1,iy)&
+                     +q(ix,iy))
+    enddo
+  enddo
+
+  do ix = 1, Nx
+    phi(ix,:) = g*hq(ix,:)
+  enddo
+
+
+  !Kinetic energy
+  do ix = 1, Nx-1
+    iv = ix + 1
+    do iy = 1, Ny-1
+      iu = iy + 1
+      ken(ix,iy)=((u(ix,iu)+u(ix+1,iu)/2.0)**2+(v(iv,iy)&
+	                +v(iv,iy+1)/2.0)**2)/2.0
+    enddo
+  enddo
+
+  us(:,:)= hu(:,:)*u(:,:)
+  vs(:,:)= hv(:,:)*v(:,:)
+  q(:,:) = (f + z(:,:))/hq(:,:)
+
+  !Updating variables for next time step
+  us1 = us
+  us2 = us1
+  us3 = us2
+  alp1 = alp
+  alp2 = alp1
+  alp3 = alp2
+  bet1 = bet
+  bet2 = bet1
+  bet3 = bet2
+  gam1 = gam
+  gam2 = gam1
+  gam3 = gam2
+  dlt1 = dlt
+  dlt2 = dlt1
+  dlt3 = dlt2
+  eps1 = eps
+  eps2 = eps1
+  eps3 = eps2
+  zet1 = zet
+  zet2 = zet1
+  zet3 = zet2
+  ken1 = ken
+  ken2 = ken1
+  ken3 = ken2
+  phi1 = phi
+  phi2 = phi1
+  phi3 = phi2
+
+  !Writing data at end of 10 day model run
+  open(15, file='Shallowfield.txt')
+  if(nstep==1440)then
+    write(15,*) h,u,v
+    exit
+  endif
+enddo       !Time loop
+
+!Cleaning up
+
+close(15)
+deallocate(hs,h,u,v,z,q,us,us1,us2,us3,vs,vs1,vs2,vs3,hu,hv,h0&
+           ,alp,bet,gam,dlt,eps,zet,ken,phi,alp1,bet1,gam1,dlt1&
+		   ,eps1,zet1,ken1,phi1,alp2,bet2,gam2,dlt2,eps2,zet2,ken2&
+		   ,phi2,alp3,bet3,gam3,dlt3,eps3,zet3,ken3,phi3)
+
+end program ShallowWaterModel
